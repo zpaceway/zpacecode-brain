@@ -1,7 +1,7 @@
 import asyncio
 from src.agent import get_agent
 from src.utils import get_logger
-from src.settings import EYES_DIST
+from src.settings import EYES_DIST_DIR
 from agno.models.message import Message
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -137,8 +137,9 @@ async def register_browser(websocket: WebSocket):
             break
 
 
-app.mount(
-    "/",
-    StaticFiles(directory=EYES_DIST, html=True),
-    name="static",
-)
+if EYES_DIST_DIR:
+    app.mount(
+        "/",
+        StaticFiles(directory=EYES_DIST_DIR, html=True),
+        name="static",
+    )

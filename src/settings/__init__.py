@@ -5,7 +5,9 @@ from pathlib import Path
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-EYES_DIST = BASE_DIR / "../eyes/dist"
+EYES_DIST_DIR = (
+    Path(os.getenv("EYES_DIST_DIR", "")) if os.getenv("EYES_DIST_DIR") else None
+)
 PORT = int(os.environ.get("PORT", "8000"))
 HOST = os.environ.get("HOST", "")
 MODEL = os.environ.get("MODEL", "")
