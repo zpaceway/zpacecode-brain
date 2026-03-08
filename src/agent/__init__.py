@@ -1,9 +1,8 @@
 from typing import Callable
-from agno.agent import Agent, Message
+from agno.agent import Agent
 from agno.models.anthropic import Claude
 from agno.models.openai import OpenAIChat
 from agno.models.ollama import Ollama
-from fastapi import WebSocket
 from src.settings import MODEL
 from src.utils import get_logger
 
