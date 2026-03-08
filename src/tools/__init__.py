@@ -1,10 +1,9 @@
 import re
 import subprocess
-import threading
-from fastapi import WebSocket
-import datetime
 import asyncio
 import random
+from fastapi import WebSocket
+import datetime
 from src.memory import fetch_responses, fetch_available_browsers, untruncated_outputs
 import lxml.html
 from html_to_markdown import convert, ConversionOptions
@@ -12,109 +11,46 @@ from src.utils import autolog, get_logger
 from src.utils import MAX_OUTPUT_CHARS
 
 logger = get_logger(__name__)
-_terminals: dict[str, subprocess.Popen] = {}
-_terminal_locks: dict[str, threading.Lock] = {}
-
-SENTINEL = "__CMD_DONE__"
-CMD_TIMEOUT = 60
-
-
-def _get_or_create_terminal(terminal_id: str) -> subprocess.Popen:
-    if terminal_id in _terminals and _terminals[terminal_id].poll() is None:
-        return _terminals[terminal_id]
-
-    proc = subprocess.Popen(
-        ["bash"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    _terminals[terminal_id] = proc
-    _terminal_locks[terminal_id] = threading.Lock()
-    return proc
-
-
-def _read_until_sentinel(proc: subprocess.Popen) -> str:
-    lines: list[str] = []
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if SENTINEL in line:
-            break
-        lines.append(line)
-    return "".join(lines)
 
 
 @autolog()
 async def exec_bash_cmd(
     cmd: str,
-    terminal_id: str | None = None,
 ) -> str:
     """Executes a bash command and returns the output or error message.
 
     Args:
         cmd (str): The bash command to execute.
-        terminal_id (str | None): The terminal ID to reuse a persistent shell session.
-            If provided, the command runs in a long-lived bash process that preserves
-            environment variables, working directory, and other state across calls.
-            If None, the command runs in a one-shot subprocess.
 
     Returns:
         str: The output of stdout and stderr from the executed command, formatted as markdown.
     """
-    if terminal_id is None:
-        try:
-            result = subprocess.run(
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
                 cmd,
                 shell=True,
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-            )
-            output = f"""## stdout
+            ),
+        )
+        output = f"""## stdout
 {result.stdout.decode()}
 
 ## stderr
 {result.stderr.decode()}
 """
-        except subprocess.CalledProcessError as e:
-            output = f"""## stdout
+    except subprocess.CalledProcessError as e:
+        output = f"""## stdout
 {e.stdout.decode()}
 
 ## stderr
 {e.stderr.decode()}
 """
-        return output.strip()
-
-    proc = _get_or_create_terminal(terminal_id)
-    lock = _terminal_locks[terminal_id]
-
-    with lock:
-        if proc.poll() is not None:
-            proc = _get_or_create_terminal(terminal_id)
-
-        assert proc.stdin is not None
-        full_cmd = f"{cmd} 2>&1; echo {SENTINEL}\n"
-        proc.stdin.write(full_cmd)
-        proc.stdin.flush()
-
-        result_lines: list[str] = []
-        reader_done = threading.Event()
-
-        def _read():
-            result_lines.append(_read_until_sentinel(proc))
-            reader_done.set()
-
-        t = threading.Thread(target=_read, daemon=True)
-        t.start()
-
-        if not reader_done.wait(timeout=CMD_TIMEOUT):
-            return "## Error\nCommand timed out."
-
-        output = f"""## stdout and/or stderr
-{"".join(result_lines)}
-"""
-        return output.strip()
+    return output.strip()
 
 
 @autolog(truncate_output=False)
