@@ -39,7 +39,10 @@ async def _handle_agent_run(
         reconstructed_assistant_message = ""
 
         async for event in agent.arun(
-            messages, stream=True, stream_events=True, yield_run_output=True
+            messages,
+            stream=True,
+            stream_events=True,
+            yield_run_output=True,
         ):
             if type(event) is ModelRequestCompletedEvent:
                 if reconstructed_assistant_message:
