@@ -11,6 +11,7 @@ from src.tools import (
     get_output_chunk,
     get_fetch_tool,
 )
+from agno.run.agent import RunOutput, ModelRequestCompletedEvent, RunContentEvent
 import json
 
 
@@ -27,9 +28,6 @@ async def _handle_agent_run(
         logger.info(f"Starting agent run for conversation_id: {conversation_id}...")
 
         agent = get_agent(
-            websocket=websocket,
-            prev_messages=messages,
-            conversation_id=conversation_id,
             tools=[
                 exec_bash_cmd,
                 get_output_chunk,
@@ -37,24 +35,80 @@ async def _handle_agent_run(
             ],
         )
 
-        result = await agent.arun(messages)
+        additional_assistant_messages = []
+        reconstructed_assistant_message = ""
+
+        async for event in agent.arun(
+            messages, stream=True, stream_events=True, yield_run_output=True
+        ):
+            if type(event) is ModelRequestCompletedEvent:
+                if reconstructed_assistant_message:
+                    additional_assistant_messages.append(
+                        Message(
+                            role="assistant",
+                            content=reconstructed_assistant_message,
+                        )
+                    )
+
+                reconstructed_assistant_message = ""
+                await websocket.send_json(
+                    {
+                        "type": "history",
+                        "conversation_id": conversation_id,
+                        "messages": [
+                            json.loads(message.model_dump_json())
+                            for message in (messages + additional_assistant_messages)
+                            if message.role != "system"
+                        ],
+                        "completed": False,
+                    }
+                )
+
+            elif type(event) is RunContentEvent:
+                reconstructed_assistant_message += event.content or ""
+
+                if reconstructed_assistant_message.strip():
+                    await websocket.send_json(
+                        {
+                            "type": "history",
+                            "conversation_id": conversation_id,
+                            "messages": [
+                                json.loads(message.model_dump_json())
+                                for message in (
+                                    messages
+                                    + additional_assistant_messages
+                                    + [
+                                        Message(
+                                            role="assistant",
+                                            content=reconstructed_assistant_message,
+                                        )
+                                    ]
+                                )
+                                if message.role != "system"
+                            ],
+                            "completed": False,
+                        }
+                    )
+
+            elif type(event) is RunOutput:
+                await websocket.send_json(
+                    {
+                        "type": "history",
+                        "conversation_id": conversation_id,
+                        "messages": [
+                            json.loads(message.model_dump_json())
+                            for message in (event.messages or [])
+                            if message.role != "system"
+                        ],
+                        "completed": True,
+                    }
+                )
+            else:
+                logger.info(
+                    f"Received event type from agent: {type(event)} for conversation_id: {conversation_id}"
+                )
 
         logger.info(f"Agent run completed for conversation_id: {conversation_id}...")
-
-        await websocket.send_json(
-            {
-                "type": "history",
-                "conversation_id": conversation_id,
-                "messages": [
-                    json.loads(message.model_dump_json())
-                    for message in (result.messages or [])
-                    if message.role != "system"
-                ],
-                "completed": True,
-            }
-        )
-
-        logger.info(f"Sent agent history for conversation_id: {conversation_id}...")
     except Exception as e:
         await websocket.send_json(
             {
