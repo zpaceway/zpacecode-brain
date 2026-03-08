@@ -2,8 +2,6 @@ import re
 import subprocess
 import asyncio
 import random
-from fastapi import WebSocket
-import datetime
 from src.memory import fetch_responses, fetch_available_browsers, untruncated_outputs
 import lxml.html
 from html_to_markdown import convert, ConversionOptions
