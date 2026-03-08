@@ -1,5 +1,6 @@
 import asyncio
-from src.agent import get_agent
+from textwrap import dedent
+from src.agent import get_assistant_agent, get_planner_agent
 from src.utils import get_logger
 from src.settings import EYES_DIST_DIR
 from agno.models.message import Message
@@ -27,19 +28,47 @@ async def _handle_agent_run(
     try:
         logger.info(f"Starting agent run for conversation_id: {conversation_id}...")
 
-        agent = get_agent(
-            tools=[
-                exec_bash_cmd,
-                get_output_chunk,
-                get_fetch_tool(conversation_id),
-            ],
+        tools = [
+            exec_bash_cmd,
+            get_output_chunk,
+            get_fetch_tool(conversation_id),
+        ]
+        planner_agent = get_planner_agent(tools=tools)
+        logger.info(f"Running planner agent for conversation_id: {conversation_id}...")
+        planner_output = await planner_agent.arun(
+            [
+                Message(
+                    role="user",
+                    content=dedent(
+                        f"""Based on the following conversation between a user and and assistant, generate a plan for how the assistant should respond to the user's last message. The plan should be a step-by-step outline of how the assistant will arrive at the final response, including any tools it will use and in what order. Be as detailed as possible in the plan.
+                
+                        ## Conversation
+                        {
+                            "\n".join(
+                                [
+                                    f"* {message.role}: {message.content}"
+                                    for message in messages
+                                ]
+                            )
+                        }
+                        """,
+                    ),
+                )
+            ]
         )
-
+        logger.info(
+            f"Planner agent completed for conversation_id: {conversation_id}. Output: {planner_output.content}"
+        )
+        planner_output_message = Message(
+            role="user",
+            content=planner_output.content,
+        )
+        assistant_agent = get_assistant_agent(tools=tools)
         additional_assistant_messages = []
         reconstructed_assistant_message = ""
 
-        async for event in agent.arun(
-            messages,
+        async for event in assistant_agent.arun(
+            messages + [planner_output_message],
             stream=True,
             stream_events=True,
             yield_run_output=True,
@@ -62,6 +91,7 @@ async def _handle_agent_run(
                             json.loads(message.model_dump_json())
                             for message in (messages + additional_assistant_messages)
                             if message.role != "system"
+                            and message.id != planner_output_message.id
                         ],
                         "completed": False,
                     }
@@ -88,6 +118,7 @@ async def _handle_agent_run(
                                     ]
                                 )
                                 if message.role != "system"
+                                and message.id != planner_output_message.id
                             ],
                             "completed": False,
                         }
@@ -102,6 +133,7 @@ async def _handle_agent_run(
                             json.loads(message.model_dump_json())
                             for message in (event.messages or [])
                             if message.role != "system"
+                            and message.id != planner_output_message.id
                         ],
                         "completed": True,
                     }
