@@ -103,22 +103,16 @@ async def run(websocket: WebSocket):
 async def register_browser(websocket: WebSocket):
     await websocket.accept()
 
-    client = websocket.client
-
-    if not client:
-        return
-
-    host = client.host
-
-    fetch_available_browsers[host] = websocket
-    logger.info(f"Browser registered: {host}")
+    browser_id = str(id(websocket))
+    fetch_available_browsers[browser_id] = websocket
+    logger.info(f"Browser registered: {browser_id}")
 
     while True:
         try:
             data = await websocket.receive_json()
 
             logger.info(
-                f"Received fetch response from browser {host} for URL: {data.get('originalUrl')}"
+                f"Received fetch response from browser {browser_id} for URL: {data.get('originalUrl')}"
             )
             original_url: str = data.get("originalUrl", "")
             html: str = data.get("html") or "<p>Empty HTML received</p>"
@@ -126,14 +120,14 @@ async def register_browser(websocket: WebSocket):
 
             if not original_url or not conversation_id:
                 logger.warning(
-                    f"Received invalid fetch response from browser {host}. Missing 'originalUrl' or 'conversation_id'."
+                    f"Received invalid fetch response from browser {browser_id}. Missing 'originalUrl' or 'conversation_id'."
                 )
                 continue
 
             fetch_responses[f"{original_url}:{conversation_id}"] = html
         except WebSocketDisconnect:
-            logger.info(f"Browser disconnected: {host}")
-            del fetch_available_browsers[host]
+            logger.info(f"Browser disconnected: {browser_id}")
+            del fetch_available_browsers[browser_id]
             break
 
 
