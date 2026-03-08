@@ -7,11 +7,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from src.memory import fetch_responses, fetch_available_browsers
 from src.tools import (
-    get_send_message_tool,
     exec_bash_cmd,
-    get_partial_untruncated_output,
+    get_output_chunk,
     get_fetch_tool,
 )
+import json
 
 
 app = FastAPI()
@@ -24,32 +24,44 @@ async def _handle_agent_run(
     conversation_id: str,
 ):
     try:
+        logger.info(f"Starting agent run for conversation_id: {conversation_id}...")
+
         agent = get_agent(
+            websocket=websocket,
+            prev_messages=messages,
+            conversation_id=conversation_id,
             tools=[
                 exec_bash_cmd,
-                get_partial_untruncated_output,
-                get_send_message_tool(websocket, conversation_id),
+                get_output_chunk,
                 get_fetch_tool(conversation_id),
-            ]
+            ],
         )
 
         result = await agent.arun(messages)
+
+        logger.info(f"Agent run completed for conversation_id: {conversation_id}...")
 
         await websocket.send_json(
             {
                 "type": "history",
                 "conversation_id": conversation_id,
                 "messages": [
-                    message.model_dump() for message in (result.messages or [])
+                    json.loads(message.model_dump_json())
+                    for message in (result.messages or [])
+                    if message.role != "system"
                 ],
+                "completed": True,
             }
         )
+
+        logger.info(f"Sent agent history for conversation_id: {conversation_id}...")
     except Exception as e:
         await websocket.send_json(
             {
                 "type": "error",
                 "conversation_id": conversation_id,
                 "error": str(e),
+                "completed": True,
             }
         )
 

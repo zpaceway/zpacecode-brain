@@ -1,11 +1,16 @@
+import json
 from typing import Callable
-import dotenv
-from agno.agent import Agent
+from agno.agent import Agent, Message
 from agno.models.anthropic import Claude
 from agno.models.openai import OpenAIChat
+from agno.models.ollama import Ollama
+from fastapi import WebSocket
 from src.settings import MODEL
+from src.utils import get_logger
+from agno.run.agent import RunOutput
 
-dotenv.load_dotenv()
+
+logger = get_logger(__name__)
 
 
 def get_model():
@@ -16,18 +21,55 @@ def get_model():
             return Claude(version)
         case "openai":
             return OpenAIChat(version)
+        case "ollama":
+            return Ollama(version)
         case _:
             raise ValueError(f"Unsupported model provider: {provider}")
 
 
-def get_agent(tools: list[Callable]) -> Agent:
+def get_post_hook(
+    conversation_id: str,
+    prev_messages: list[Message],
+    websocket: WebSocket,
+):
+
+    async def get_post_hook(*args, **kwargs) -> None:
+        run_output: RunOutput = kwargs.get("run_output")  # type: ignore
+
+        if run_output is None:
+            return
+
+        messages = {
+            "type": "history",
+            "conversation_id": conversation_id,
+            "messages": [
+                message.model_dump(mode="json", exclude={"metrics"})
+                for message in (prev_messages + (run_output.messages or []))
+                if message.role != "system"
+            ],
+            "completed": False,
+        }
+
+        await websocket.send_json(messages)
+
+    return get_post_hook
+
+
+def get_agent(
+    websocket: WebSocket,
+    conversation_id: str,
+    prev_messages: list[Message],
+    tools: list[Callable],
+) -> Agent:
     agent = Agent(
         name="Zpacecode Assistant",
         model=get_model(),
-        system_message="""You are Zpacecode Assistant, an AI assistant designed to help users with a variety of tasks.
-
-IMPORTANT: The only way to communicate with the user is by calling the send_message tool. Your returned text responses are NOT delivered to the user — they will never see them. If you want the user to know something, you must call send_message. Before making any tool call, always call send_message first to explain what you are about to do. After completing a task, call send_message to share the results. Never assume the user can see anything you haven't explicitly sent via send_message.""",
+        system_message="""You are Zpacecode Assistant, an AI assistant designed to help users with a variety of tasks.""",
         tools=tools,
+        pre_hooks=[],
+        post_hooks=[get_post_hook(conversation_id, prev_messages, websocket)],
+        tool_hooks=[],
+        reasoning=True,
     )
 
     return agent

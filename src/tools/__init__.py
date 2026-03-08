@@ -54,23 +54,23 @@ async def exec_bash_cmd(
 
 
 @autolog(truncate_output=False)
-async def get_partial_untruncated_output(
+async def get_output_chunk(
     output_id: str,
     offset: int,
     limit: int,
 ) -> str:
-    """Retrieves a partial slice of the full untruncated output for a given output ID.
-    Returns characters from offset to offset+limit. The limit can not exceed the max
-    output chars limit imposed on any tool. You can call this tool multiple times with
-    the same output ID and different offsets to page through the full output.
+    """Retrieves a chunk of a previously truncated output by its ID.
+    Returns characters from offset to offset+limit. The limit cannot exceed the max
+    output chars limit imposed on any tool. Call this tool multiple times with different
+    offsets to page through the full output.
 
     Args:
-        output_id (str): The ID of the truncated output to retrieve.
+        output_id (str): The ID of the output to retrieve a chunk from.
         offset (int): The character offset to start reading from.
         limit (int): The maximum number of characters to return.
 
     Returns:
-        str: A partial slice of the untruncated output, or an error message if not found.
+        str: The requested output chunk, or an error message if not found.
     """
     if limit > MAX_OUTPUT_CHARS:
         return f"## Error\nlimit cannot exceed {MAX_OUTPUT_CHARS} characters."
@@ -83,34 +83,6 @@ async def get_partial_untruncated_output(
     end = offset + limit
 
     return full_output[offset:end]
-
-
-def get_send_message_tool(websocket: WebSocket, conversation_id: str):
-    @autolog()
-    async def send_message(message: str) -> str:
-        """Send a message to the user.
-
-        Args:
-            message (str): The message to send.
-
-        Returns:
-            str: A confirmation message that the message was sent.
-        """
-        await websocket.send_json(
-            {
-                "type": "assistant",
-                "conversation_id": conversation_id,
-                "message": {
-                    "created_at": (
-                        datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    ),
-                    "content": message,
-                },
-            }
-        )
-        return "Message sent to user."
-
-    return send_message
 
 
 def get_fetch_tool(conversation_id: str):
