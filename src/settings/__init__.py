@@ -12,8 +12,10 @@ PORT = int(os.environ.get("PORT", ""))
 HOST = os.environ.get("HOST", "")
 MODEL = os.environ.get("MODEL", "")
 MAX_OUTPUT_CHARS = int(os.environ.get("MAX_OUTPUT_CHARS", "2000"))
+EYES_TOKEN = os.environ.get("EYES_TOKEN", "")
 
 assert PORT
 assert HOST
 assert MODEL
 assert MAX_OUTPUT_CHARS
+assert EYES_TOKEN
