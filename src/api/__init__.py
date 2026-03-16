@@ -4,7 +4,7 @@ from src.settings import EYES_DIST_DIR, APP_TOKEN
 from agno.models.message import Message
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from src.memory import fetch_responses, fetch_available_browsers, conversations
+from src.memory import fetch_responses, fetch_available_browsers, conversations_memory
 from src.agent import get_agent
 from agno.run.agent import RunOutput, ModelRequestCompletedEvent, RunContentEvent
 import json
@@ -94,7 +94,7 @@ async def _handle_agent_run(
                         "completed": True,
                     }
                 )
-                conversations[conversation_id] = event.messages or []
+                conversations_memory.set_messages(conversation_id, event.messages or [])
             else:
                 logger.info(
                     f"Received event type from agent: {type(event)} for conversation_id: {conversation_id}"
@@ -118,7 +118,8 @@ async def run(websocket: WebSocket):
 
     tasks: set[asyncio.Task] = set()
 
-    for _conversation_id, _messages in conversations.items():
+    for _conversation_id in conversations_memory.get_conversation_ids():
+        _messages = conversations_memory.get_messages(_conversation_id)
         await websocket.send_json(
             {
                 "type": "history",
