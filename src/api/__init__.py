@@ -1,13 +1,11 @@
 import asyncio
-from src.agent import get_agent
 from src.utils import get_logger
 from src.settings import EYES_DIST_DIR, EYES_TOKEN
 from agno.models.message import Message
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from src.memory import fetch_responses, fetch_available_browsers
-from src.tools import get_tools
-
+from src.agent import get_agent
 from agno.run.agent import RunOutput, ModelRequestCompletedEvent, RunContentEvent
 import json
 
@@ -24,8 +22,7 @@ async def _handle_agent_run(
     try:
         logger.info(f"Starting agent run for conversation_id: {conversation_id}...")
 
-        tools = get_tools(conversation_id=conversation_id)
-        assistant_agent = get_agent(tools=tools)
+        assistant_agent = get_agent(conversation_id=conversation_id)
         additional_assistant_messages = []
         reconstructed_assistant_message = ""
 
