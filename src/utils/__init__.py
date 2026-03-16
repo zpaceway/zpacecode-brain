@@ -28,7 +28,7 @@ def truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
 
-    output_id = str(uuid.uuid4().hex)
+    output_id = uuid.uuid4().hex
     untruncated_outputs[output_id] = text
 
     return f"""# Warning, truncated
