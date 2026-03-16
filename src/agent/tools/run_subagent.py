@@ -34,9 +34,7 @@ async def run_subagent(message: str) -> str:
         ]
     )
 
-    logger.info(
-        f"Sub-agent completed for conversation_id: {new_conversation_id}. Output: {subagent_output.content}"
-    )
+    logger.info(f"Sub-agent completed for conversation_id: {new_conversation_id}")
     content: str = subagent_output.content  # type: ignore
 
     return content
