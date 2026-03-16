@@ -118,25 +118,11 @@ async def run(websocket: WebSocket):
 
     tasks: set[asyncio.Task] = set()
 
-    for _conversation_id in conversations_memory.get_conversation_ids():
-        _messages = conversations_memory.get_messages(_conversation_id)
-        await websocket.send_json(
-            {
-                "type": "history",
-                "conversation_id": _conversation_id,
-                "messages": [
-                    json.loads(message.model_dump_json())
-                    for message in _messages
-                    if message.role != "system"
-                ],
-                "completed": True,
-            }
-        )
-
     try:
         while True:
             data = await websocket.receive_json()
 
+            msg_type = data.get("type")
             conversation_id: str = data.get("conversation_id")
             token = data.get("token")
 
@@ -160,25 +146,57 @@ async def run(websocket: WebSocket):
                 )
                 continue
 
-            messages: list = data.get("messages", [])
+            match msg_type:
+                case "history":
+                    exclude = data.get("exclude", [])
+                    for _conversation_id in conversations_memory.get_conversation_ids():
+                        if _conversation_id in exclude:
+                            continue
 
-            if not messages or not conversation_id:
-                await websocket.send_json(
-                    {
-                        "type": "error",
-                        "conversation_id": conversation_id,
-                        "error": "Missing 'messages' or 'conversation_id' in the request.",
-                    }
-                )
-                continue
+                        _messages = conversations_memory.get_messages(_conversation_id)
+                        await websocket.send_json(
+                            {
+                                "type": "history",
+                                "conversation_id": _conversation_id,
+                                "messages": [
+                                    json.loads(message.model_dump_json())
+                                    for message in _messages
+                                    if message.role != "system"
+                                ],
+                                "completed": True,
+                            }
+                        )
 
-            messages = [Message(**msg) for msg in messages]
+                    return
+                case "run":
+                    messages: list = data.get("messages", [])
 
-            task = asyncio.create_task(
-                _handle_agent_run(websocket, messages, conversation_id)
-            )
-            tasks.add(task)
-            task.add_done_callback(tasks.discard)
+                    if not messages or not conversation_id:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "conversation_id": conversation_id,
+                                "error": "Missing 'messages' or 'conversation_id' in the request.",
+                            }
+                        )
+                        continue
+
+                    messages = [Message(**msg) for msg in messages]
+
+                    task = asyncio.create_task(
+                        _handle_agent_run(websocket, messages, conversation_id)
+                    )
+                    tasks.add(task)
+                    task.add_done_callback(tasks.discard)
+
+                case _:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "conversation_id": conversation_id,
+                            "error": f"Unsupported message type: {msg_type}",
+                        }
+                    )
 
     except WebSocketDisconnect:
         for task in tasks:
