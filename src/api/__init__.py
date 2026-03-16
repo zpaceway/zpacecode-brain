@@ -1,10 +1,10 @@
 import asyncio
 from src.utils import get_logger
-from src.settings import EYES_DIST_DIR, EYES_TOKEN
+from src.settings import EYES_DIST_DIR, APP_TOKEN
 from agno.models.message import Message
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from src.memory import fetch_responses, fetch_available_browsers
+from src.memory import fetch_responses, fetch_available_browsers, conversations
 from src.agent import get_agent
 from agno.run.agent import RunOutput, ModelRequestCompletedEvent, RunContentEvent
 import json
@@ -94,6 +94,7 @@ async def _handle_agent_run(
                         "completed": True,
                     }
                 )
+                conversations[conversation_id] = event.messages or []
             else:
                 logger.info(
                     f"Received event type from agent: {type(event)} for conversation_id: {conversation_id}"
@@ -117,6 +118,20 @@ async def run(websocket: WebSocket):
 
     tasks: set[asyncio.Task] = set()
 
+    for _conversation_id, _messages in conversations.items():
+        await websocket.send_json(
+            {
+                "type": "history",
+                "conversation_id": _conversation_id,
+                "messages": [
+                    json.loads(message.model_dump_json())
+                    for message in _messages
+                    if message.role != "system"
+                ],
+                "completed": True,
+            }
+        )
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -134,7 +149,7 @@ async def run(websocket: WebSocket):
                 )
                 continue
 
-            if token != EYES_TOKEN:
+            if token != APP_TOKEN:
                 await websocket.send_json(
                     {
                         "type": "error",
