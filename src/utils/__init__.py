@@ -58,9 +58,7 @@ def autolog(truncate_output: bool = True):
             if truncate_output:
                 result = truncate(result)
 
-            trimmed_result = (
-                str(result)[:1000].replace("\n", "\\n").replace("\r", "\\r")
-            )
+            trimmed_result = repr(str(result)[:1000])
             logger.info(f"Function {func.__name__} returned: {trimmed_result}")
 
             return result
